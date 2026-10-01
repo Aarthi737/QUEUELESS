@@ -1,0 +1,33 @@
+export const mockUsers = [
+  {
+    id: 'user-1',
+    name: 'Aarthi Sharma',
+    email: 'aarthi.sharma@example.com',
+    phone: '+91 98765 43210',
+    preferredLocation: 'Central City, Metro Region',
+    role: 'customer',
+    memberSince: 'January 2025',
+    avatar: 'AS',
+  },
+  {
+    id: 'staff-1',
+    name: 'Dr. Rajesh Kumar',
+    email: 'r.kumar@citycare.org',
+    phone: '+91 98111 22334',
+    preferredLocation: 'CityCare Hospital OPD',
+    role: 'staff',
+    assignedServiceId: 'hosp-1',
+    memberSince: 'August 2024',
+    avatar: 'RK',
+  },
+  {
+    id: 'admin-1',
+    name: 'Vikram Mehta',
+    email: 'admin@queueless.io',
+    phone: '+91 98222 33445',
+    preferredLocation: 'Central HQ Operations',
+    role: 'admin',
+    memberSince: 'June 2024',
+    avatar: 'VM',
+  },
+];
