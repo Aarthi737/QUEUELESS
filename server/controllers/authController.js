@@ -1,13 +1,14 @@
 import { User } from '../models/User.js';
-import { generateToken } from '../utils/generateToken.js';
+import { generateToken } from '../middleware/auth.js';
 
 // @desc    Register a new user
-// @route   POST /api/auth/register
+// @route   POST /api/auth/register or POST /api/users/register
 // @access  Public
 export const register = async (req, res, next) => {
   try {
     const { name, email, password, phone, preferredLocation, role } = req.body;
 
+    // 1. Validate required fields
     if (!name || !email || !password) {
       return res.status(400).json({
         success: false,
@@ -22,6 +23,7 @@ export const register = async (req, res, next) => {
       });
     }
 
+    // 2. Check for duplicate email in MongoDB
     const existingUser = await User.findOne({ email: email.toLowerCase().trim() });
     if (existingUser) {
       return res.status(409).json({
@@ -30,7 +32,7 @@ export const register = async (req, res, next) => {
       });
     }
 
-    // Generate avatar initials from name
+    // 3. Generate initials for avatar (e.g. "Aarthi Sharma" -> "AS")
     const initials = name
       .split(' ')
       .map((part) => part.charAt(0))
@@ -38,6 +40,7 @@ export const register = async (req, res, next) => {
       .substring(0, 2)
       .toUpperCase();
 
+    // 4. Create user in MongoDB (pre-save hook hashes password with bcrypt)
     const user = await User.create({
       name: name.trim(),
       email: email.toLowerCase().trim(),
@@ -48,8 +51,10 @@ export const register = async (req, res, next) => {
       avatar: initials,
     });
 
+    // 5. Generate JWT token
     const token = generateToken(user._id);
 
+    // 6. Return response (password is automatically excluded by User model toJSON)
     res.status(201).json({
       success: true,
       message: 'Account registered successfully',
@@ -62,12 +67,13 @@ export const register = async (req, res, next) => {
 };
 
 // @desc    Authenticate user & get token
-// @route   POST /api/auth/login
+// @route   POST /api/auth/login or POST /api/users/login
 // @access  Public
 export const login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
 
+    // 1. Check for email and password
     if (!email || !password) {
       return res.status(400).json({
         success: false,
@@ -75,6 +81,7 @@ export const login = async (req, res, next) => {
       });
     }
 
+    // 2. Find user in MongoDB by email
     const user = await User.findOne({ email: email.toLowerCase().trim() });
     if (!user) {
       return res.status(401).json({
@@ -83,6 +90,7 @@ export const login = async (req, res, next) => {
       });
     }
 
+    // 3. Compare entered password with stored bcrypt hash
     const isMatch = await user.matchPassword(password);
     if (!isMatch) {
       return res.status(401).json({
@@ -91,8 +99,10 @@ export const login = async (req, res, next) => {
       });
     }
 
+    // 4. Generate signed JWT token
     const token = generateToken(user._id);
 
+    // 5. Return success response with user profile
     res.status(200).json({
       success: true,
       message: 'Logged in successfully',
@@ -105,10 +115,11 @@ export const login = async (req, res, next) => {
 };
 
 // @desc    Get currently authenticated user
-// @route   GET /api/auth/me
-// @access  Private
+// @route   GET /api/auth/me or GET /api/users/me
+// @access  Private (Requires Bearer Token)
 export const getMe = async (req, res, next) => {
   try {
+    // req.user was attached by auth protect middleware
     res.status(200).json({
       success: true,
       user: req.user,
@@ -119,7 +130,7 @@ export const getMe = async (req, res, next) => {
 };
 
 // @desc    Update user profile
-// @route   PUT /api/auth/profile
+// @route   PUT /api/auth/profile or PUT /api/users/profile
 // @access  Private
 export const updateProfile = async (req, res, next) => {
   try {
@@ -133,10 +144,12 @@ export const updateProfile = async (req, res, next) => {
 
     const { name, email, phone, preferredLocation } = req.body;
 
+    // Update fields if provided
     if (name) user.name = name.trim();
     if (phone !== undefined) user.phone = phone.trim();
     if (preferredLocation !== undefined) user.preferredLocation = preferredLocation.trim();
 
+    // Check if new email conflicts with another user
     if (email && email.toLowerCase().trim() !== user.email) {
       const emailExists = await User.findOne({ email: email.toLowerCase().trim() });
       if (emailExists) {
@@ -148,7 +161,7 @@ export const updateProfile = async (req, res, next) => {
       user.email = email.toLowerCase().trim();
     }
 
-    // Refresh avatar initials if name changed
+    // Update avatar initials if name changed
     if (name) {
       user.avatar = user.name
         .split(' ')
@@ -158,6 +171,7 @@ export const updateProfile = async (req, res, next) => {
         .toUpperCase();
     }
 
+    // Save updated user in MongoDB
     await user.save();
 
     res.status(200).json({

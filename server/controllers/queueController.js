@@ -1,7 +1,7 @@
 import { Queue } from '../models/Queue.js';
 import { QueueEntry } from '../models/QueueEntry.js';
 
-// @desc    Get all queues / services
+// @desc    Get all queues with live waiting counts
 // @route   GET /api/queues
 // @access  Public
 export const getQueues = async (req, res, next) => {
@@ -9,10 +9,12 @@ export const getQueues = async (req, res, next) => {
     const { category, search } = req.query;
     let query = {};
 
+    // Filter by category if selected
     if (category && category !== 'All') {
       query.category = category;
     }
 
+    // Search by name, department, or location
     if (search) {
       query.$or = [
         { name: { $regex: search, $options: 'i' } },
@@ -22,9 +24,10 @@ export const getQueues = async (req, res, next) => {
       ];
     }
 
+    // Find queues in MongoDB
     const queues = await Queue.find(query).sort({ name: 1 });
 
-    // Sync live waiting counts from QueueEntry for each queue
+    // Calculate real-time waiting counts from active QueueEntry documents
     const formattedQueues = await Promise.all(
       queues.map(async (q) => {
         const liveWaiting = await QueueEntry.countDocuments({
@@ -32,7 +35,6 @@ export const getQueues = async (req, res, next) => {
           status: 'Waiting',
         });
 
-        // Use live count if entries exist, else retain seed/current count
         const peopleWaiting = liveWaiting > 0 ? liveWaiting : q.peopleWaiting;
         const estimatedWait = peopleWaiting * q.avgWaitPerPerson;
 
@@ -68,7 +70,7 @@ export const getQueues = async (req, res, next) => {
   }
 };
 
-// @desc    Get single queue by ID
+// @desc    Get single queue details by ID
 // @route   GET /api/queues/:id
 // @access  Public
 export const getQueueById = async (req, res, next) => {
@@ -82,6 +84,7 @@ export const getQueueById = async (req, res, next) => {
       });
     }
 
+    // Count live waiting entries
     const liveWaiting = await QueueEntry.countDocuments({
       queueId: queue._id,
       status: 'Waiting',
@@ -117,11 +120,12 @@ export const getQueueById = async (req, res, next) => {
   }
 };
 
-// @desc    Join a queue and generate digital token
+// @desc    Join queue and generate sequential digital token
 // @route   POST /api/queues/:id/join
 // @access  Public (Optional Auth)
 export const joinQueue = async (req, res, next) => {
   try {
+    // 1. Find the target queue in MongoDB
     const queue = await Queue.findById(req.params.id);
 
     if (!queue) {
@@ -131,6 +135,7 @@ export const joinQueue = async (req, res, next) => {
       });
     }
 
+    // 2. Check if queue is paused or closed
     if (queue.status === 'Paused') {
       return res.status(400).json({
         success: false,
@@ -152,7 +157,7 @@ export const joinQueue = async (req, res, next) => {
       (req.body.customerPhone || (req.user ? req.user.phone : '') || '').trim();
     const notes = (req.body.notes || '').trim();
 
-    // Check if authenticated user already has an active waiting token in this queue
+    // 3. Prevent duplicate active token in same queue
     if (userId) {
       const activeInQueue = await QueueEntry.findOne({
         queueId: queue._id,
@@ -169,8 +174,7 @@ export const joinQueue = async (req, res, next) => {
       }
     }
 
-    // Determine the next token index
-    // Look for highest token index in this queue
+    // 4. Calculate next sequential token index
     const highestEntry = await QueueEntry.findOne({ queueId: queue._id })
       .sort({ tokenIndex: -1 })
       .select('tokenIndex');
@@ -182,9 +186,10 @@ export const joinQueue = async (req, res, next) => {
       nextNumber = queue.currentNumber + (queue.peopleWaiting || 0) + 1;
     }
 
+    // Format token string: e.g. "A" + 42 -> "A42"
     const tokenNumber = `${queue.codePrefix}${nextNumber < 10 ? '0' + nextNumber : nextNumber}`;
 
-    // Calculate people ahead
+    // 5. Calculate people ahead
     const peopleAhead = await QueueEntry.countDocuments({
       queueId: queue._id,
       status: 'Waiting',
@@ -192,7 +197,7 @@ export const joinQueue = async (req, res, next) => {
 
     const estimatedWait = peopleAhead * queue.avgWaitPerPerson;
 
-    // Create the QueueEntry
+    // 6. Save new QueueEntry document in MongoDB
     const entry = await QueueEntry.create({
       queueId: queue._id,
       userId,
@@ -205,7 +210,7 @@ export const joinQueue = async (req, res, next) => {
       joinedAt: new Date(),
     });
 
-    // Update queue document metrics
+    // 7. Update queue metrics in MongoDB
     queue.peopleWaiting = peopleAhead + 1;
     queue.estimatedWait = (peopleAhead + 1) * queue.avgWaitPerPerson;
     await queue.save();
@@ -237,7 +242,7 @@ export const joinQueue = async (req, res, next) => {
   }
 };
 
-// @desc    Leave queue / Cancel active token
+// @desc    Leave queue and mark token as Cancelled
 // @route   DELETE /api/queues/:id/leave
 // @access  Public (Optional Auth)
 export const leaveQueue = async (req, res, next) => {
@@ -252,18 +257,16 @@ export const leaveQueue = async (req, res, next) => {
 
     let entry = null;
 
-    // If entryId passed directly in body
+    // Find the active entry to cancel
     if (req.body.entryId) {
       entry = await QueueEntry.findById(req.body.entryId);
     } else if (req.user) {
-      // Find user's active entry in this queue
       entry = await QueueEntry.findOne({
         queueId: queue._id,
         userId: req.user._id,
         status: { $in: ['Waiting', 'Now Serving'] },
       });
     } else if (req.body.tokenNumber) {
-      // Find by tokenNumber
       entry = await QueueEntry.findOne({
         queueId: queue._id,
         tokenNumber: req.body.tokenNumber,
@@ -278,11 +281,12 @@ export const leaveQueue = async (req, res, next) => {
       });
     }
 
+    // Mark as Cancelled in MongoDB
     entry.status = 'Cancelled';
     entry.completedAt = new Date();
     await entry.save();
 
-    // Decrement people waiting count
+    // Recalculate remaining waiting visitors
     const remainingWaiting = await QueueEntry.countDocuments({
       queueId: queue._id,
       status: 'Waiting',
@@ -302,11 +306,12 @@ export const leaveQueue = async (req, res, next) => {
   }
 };
 
-// @desc    Get current user's active queue token
+// @desc    Get user's active queue token with real-time position
 // @route   GET /api/queues/my/active
 // @access  Private
 export const getMyActiveQueue = async (req, res, next) => {
   try {
+    // Find active ticket in MongoDB
     const entry = await QueueEntry.findOne({
       userId: req.user._id,
       status: { $in: ['Waiting', 'Now Serving'] },
@@ -413,7 +418,7 @@ export const getMyQueueHistory = async (req, res, next) => {
   }
 };
 
-// @desc    Staff: Call next token in queue
+// @desc    Staff: Advance counter and call next token
 // @route   POST /api/queues/:id/call-next
 // @access  Private (Staff/Admin)
 export const callNext = async (req, res, next) => {
@@ -440,7 +445,7 @@ export const callNext = async (req, res, next) => {
       }
     );
 
-    // 2. Increment queue currentNumber
+    // 2. Advance sequence counter
     const nextNum = queue.currentNumber + 1;
     const nextTokenStr = `${queue.codePrefix}${nextNum < 10 ? '0' + nextNum : nextNum}`;
 
@@ -451,7 +456,6 @@ export const callNext = async (req, res, next) => {
       tokenIndex: nextNum,
     });
 
-    // If no exact tokenIndex match, find the earliest waiting entry
     if (!nextEntry) {
       nextEntry = await QueueEntry.findOne({
         queueId: queue._id,
@@ -465,7 +469,7 @@ export const callNext = async (req, res, next) => {
       await nextEntry.save();
     }
 
-    // 4. Update Queue state
+    // 4. Update Queue state in MongoDB
     queue.currentNumber = nextNum;
     queue.currentServing = nextTokenStr;
 
@@ -604,7 +608,6 @@ export const getQueueEntries = async (req, res, next) => {
       status: { $in: ['Now Serving', 'Waiting'] },
     }).sort({ tokenIndex: 1 });
 
-    // Generate upcoming list for staff view
     const list = [];
     const prefix = queue.codePrefix;
     const currentNum = queue.currentNumber;
