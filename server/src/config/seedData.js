@@ -1,7 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { User } from '../models/User.js';
 import { Queue } from '../models/Queue.js';
-import { QueueEntry } from '../models/QueueEntry.js';
+import { Entry } from '../models/Entry.js';
 
 export const seedDatabase = async () => {
   try {
@@ -10,7 +10,7 @@ export const seedDatabase = async () => {
     // Clear existing collections
     await User.deleteMany({});
     await Queue.deleteMany({});
-    await QueueEntry.deleteMany({});
+    await Entry.deleteMany({});
 
     // 1. Create Users
     const customerUser = await User.create({
@@ -152,7 +152,7 @@ export const seedDatabase = async () => {
     // 3. Create active queue entry for customer Aarthi (# A42)
     // Create intervening entries between A36 and A41 so peopleAhead equals 7
     for (let i = 36; i <= 41; i++) {
-      await QueueEntry.create({
+      await Entry.create({
         queueId: hospitalQueue._id,
         customerName: `Patient ${i}`,
         customerPhone: `+91 98000 ${10000 + i}`,
@@ -165,7 +165,7 @@ export const seedDatabase = async () => {
     }
 
     // Aarthi's entry: A42
-    await QueueEntry.create({
+    await Entry.create({
       queueId: hospitalQueue._id,
       userId: customerUser._id,
       customerName: customerUser.name,
@@ -178,7 +178,7 @@ export const seedDatabase = async () => {
     });
 
     // 4. Create History Entries for customer Aarthi
-    await QueueEntry.create({
+    await Entry.create({
       queueId: hospitalQueue._id,
       userId: customerUser._id,
       customerName: customerUser.name,
@@ -192,7 +192,7 @@ export const seedDatabase = async () => {
       completedAt: new Date(Date.now() - 1.5 * 3600000),
     });
 
-    await QueueEntry.create({
+    await Entry.create({
       queueId: bankQueue._id,
       userId: customerUser._id,
       customerName: customerUser.name,
@@ -206,7 +206,7 @@ export const seedDatabase = async () => {
       completedAt: new Date(Date.now() - 23.5 * 3600000),
     });
 
-    await QueueEntry.create({
+    await Entry.create({
       queueId: govtQueue._id,
       userId: customerUser._id,
       customerName: customerUser.name,
@@ -219,7 +219,7 @@ export const seedDatabase = async () => {
       completedAt: new Date(Date.now() - 71.9 * 3600000),
     });
 
-    await QueueEntry.create({
+    await Entry.create({
       queueId: uniQueue._id,
       userId: customerUser._id,
       customerName: customerUser.name,

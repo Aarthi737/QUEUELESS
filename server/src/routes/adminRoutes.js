@@ -4,7 +4,7 @@ import {
   getAdminUsers,
   resetDemoData,
 } from '../controllers/adminController.js';
-import { protect, optionalProtect, authorize } from '../middleware/authMiddleware.js';
+import { protect, optionalProtect, authorize } from '../middleware/auth.js';
 
 const router = express.Router();
 

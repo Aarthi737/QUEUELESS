@@ -12,7 +12,7 @@ import {
   togglePauseQueue,
   getQueueEntries,
 } from '../controllers/queueController.js';
-import { protect, optionalProtect, authorize } from '../middleware/authMiddleware.js';
+import { protect, optionalProtect, authorize } from '../middleware/auth.js';
 
 const router = express.Router();
 

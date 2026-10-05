@@ -1,5 +1,5 @@
 import { Queue } from '../models/Queue.js';
-import { QueueEntry } from '../models/QueueEntry.js';
+import { Entry } from '../models/Entry.js';
 import { User } from '../models/User.js';
 import { seedDatabase } from '../config/seedData.js';
 
@@ -11,7 +11,7 @@ export const getAdminOverview = async (req, res, next) => {
     const totalQueues = await Queue.countDocuments();
     const activeQueues = await Queue.countDocuments({ status: 'Active' });
 
-    const totalServedEntries = await QueueEntry.countDocuments({ status: 'Completed' });
+    const totalServedEntries = await Entry.countDocuments({ status: 'Completed' });
     const peopleServed = 124 + totalServedEntries; // baseline 124 + completed records
 
     const queues = await Queue.find();

@@ -1,5 +1,5 @@
 import { Queue } from '../models/Queue.js';
-import { QueueEntry } from '../models/QueueEntry.js';
+import { Entry } from '../models/Entry.js';
 
 // @desc    Get all queues with live waiting counts
 // @route   GET /api/queues
@@ -27,10 +27,10 @@ export const getQueues = async (req, res, next) => {
     // Find queues in MongoDB
     const queues = await Queue.find(query).sort({ name: 1 });
 
-    // Calculate real-time waiting counts from active QueueEntry documents
+    // Calculate real-time waiting counts from active Entry documents
     const formattedQueues = await Promise.all(
       queues.map(async (q) => {
-        const liveWaiting = await QueueEntry.countDocuments({
+        const liveWaiting = await Entry.countDocuments({
           queueId: q._id,
           status: 'Waiting',
         });
@@ -85,7 +85,7 @@ export const getQueueById = async (req, res, next) => {
     }
 
     // Count live waiting entries
-    const liveWaiting = await QueueEntry.countDocuments({
+    const liveWaiting = await Entry.countDocuments({
       queueId: queue._id,
       status: 'Waiting',
     });
@@ -159,7 +159,7 @@ export const joinQueue = async (req, res, next) => {
 
     // 3. Prevent duplicate active token in same queue
     if (userId) {
-      const activeInQueue = await QueueEntry.findOne({
+      const activeInQueue = await Entry.findOne({
         queueId: queue._id,
         userId,
         status: { $in: ['Waiting', 'Now Serving'] },
@@ -175,7 +175,7 @@ export const joinQueue = async (req, res, next) => {
     }
 
     // 4. Calculate next sequential token index
-    const highestEntry = await QueueEntry.findOne({ queueId: queue._id })
+    const highestEntry = await Entry.findOne({ queueId: queue._id })
       .sort({ tokenIndex: -1 })
       .select('tokenIndex');
 
@@ -190,15 +190,15 @@ export const joinQueue = async (req, res, next) => {
     const tokenNumber = `${queue.codePrefix}${nextNumber < 10 ? '0' + nextNumber : nextNumber}`;
 
     // 5. Calculate people ahead
-    const peopleAhead = await QueueEntry.countDocuments({
+    const peopleAhead = await Entry.countDocuments({
       queueId: queue._id,
       status: 'Waiting',
     });
 
     const estimatedWait = peopleAhead * queue.avgWaitPerPerson;
 
-    // 6. Save new QueueEntry document in MongoDB
-    const entry = await QueueEntry.create({
+    // 6. Save new Entry document in MongoDB
+    const entry = await Entry.create({
       queueId: queue._id,
       userId,
       customerName,
@@ -259,15 +259,15 @@ export const leaveQueue = async (req, res, next) => {
 
     // Find the active entry to cancel
     if (req.body.entryId) {
-      entry = await QueueEntry.findById(req.body.entryId);
+      entry = await Entry.findById(req.body.entryId);
     } else if (req.user) {
-      entry = await QueueEntry.findOne({
+      entry = await Entry.findOne({
         queueId: queue._id,
         userId: req.user._id,
         status: { $in: ['Waiting', 'Now Serving'] },
       });
     } else if (req.body.tokenNumber) {
-      entry = await QueueEntry.findOne({
+      entry = await Entry.findOne({
         queueId: queue._id,
         tokenNumber: req.body.tokenNumber,
         status: { $in: ['Waiting', 'Now Serving'] },
@@ -287,7 +287,7 @@ export const leaveQueue = async (req, res, next) => {
     await entry.save();
 
     // Recalculate remaining waiting visitors
-    const remainingWaiting = await QueueEntry.countDocuments({
+    const remainingWaiting = await Entry.countDocuments({
       queueId: queue._id,
       status: 'Waiting',
     });
@@ -312,7 +312,7 @@ export const leaveQueue = async (req, res, next) => {
 export const getMyActiveQueue = async (req, res, next) => {
   try {
     // Find active ticket in MongoDB
-    const entry = await QueueEntry.findOne({
+    const entry = await Entry.findOne({
       userId: req.user._id,
       status: { $in: ['Waiting', 'Now Serving'] },
     })
@@ -333,7 +333,7 @@ export const getMyActiveQueue = async (req, res, next) => {
     let estimatedWait = 0;
 
     if (entry.status === 'Waiting') {
-      peopleAhead = await QueueEntry.countDocuments({
+      peopleAhead = await Entry.countDocuments({
         queueId: queue._id,
         status: 'Waiting',
         tokenIndex: { $lt: entry.tokenIndex },
@@ -375,7 +375,7 @@ export const getMyActiveQueue = async (req, res, next) => {
 // @access  Private
 export const getMyQueueHistory = async (req, res, next) => {
   try {
-    const entries = await QueueEntry.find({
+    const entries = await Entry.find({
       userId: req.user._id,
       status: { $in: ['Completed', 'Cancelled'] },
     })
@@ -432,7 +432,7 @@ export const callNext = async (req, res, next) => {
     }
 
     // 1. Mark existing 'Now Serving' entry as 'Completed'
-    await QueueEntry.updateMany(
+    await Entry.updateMany(
       {
         queueId: queue._id,
         status: 'Now Serving',
@@ -450,14 +450,14 @@ export const callNext = async (req, res, next) => {
     const nextTokenStr = `${queue.codePrefix}${nextNum < 10 ? '0' + nextNum : nextNum}`;
 
     // 3. Find if any active waiting entry matches this next token
-    let nextEntry = await QueueEntry.findOne({
+    let nextEntry = await Entry.findOne({
       queueId: queue._id,
       status: 'Waiting',
       tokenIndex: nextNum,
     });
 
     if (!nextEntry) {
-      nextEntry = await QueueEntry.findOne({
+      nextEntry = await Entry.findOne({
         queueId: queue._id,
         status: 'Waiting',
       }).sort({ tokenIndex: 1 });
@@ -473,7 +473,7 @@ export const callNext = async (req, res, next) => {
     queue.currentNumber = nextNum;
     queue.currentServing = nextTokenStr;
 
-    const remainingWaiting = await QueueEntry.countDocuments({
+    const remainingWaiting = await Entry.countDocuments({
       queueId: queue._id,
       status: 'Waiting',
     });
@@ -511,7 +511,7 @@ export const completeCurrent = async (req, res, next) => {
       });
     }
 
-    await QueueEntry.updateMany(
+    await Entry.updateMany(
       {
         queueId: queue._id,
         status: 'Now Serving',
@@ -544,7 +544,7 @@ export const skipCurrent = async (req, res, next) => {
       });
     }
 
-    await QueueEntry.updateMany(
+    await Entry.updateMany(
       {
         queueId: queue._id,
         status: 'Now Serving',
@@ -603,7 +603,7 @@ export const getQueueEntries = async (req, res, next) => {
       });
     }
 
-    const realEntries = await QueueEntry.find({
+    const realEntries = await Entry.find({
       queueId: queue._id,
       status: { $in: ['Now Serving', 'Waiting'] },
     }).sort({ tokenIndex: 1 });
