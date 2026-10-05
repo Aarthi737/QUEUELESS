@@ -1,17 +1,17 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { connectDB } from './db.js';
-import { seedDatabase } from './config/seedData.js';
-import { Queue } from './models/Queue.js';
+import { connectDB } from './src/config/db.js';
+import { seedDatabase } from './src/config/seedData.js';
+import { Queue } from './src/models/Queue.js';
 
 // Import route modules
-import userRoutes from './routes/userRoutes.js';
-import queueRoutes from './routes/queueRoutes.js';
-import adminRoutes from './routes/adminRoutes.js';
+import userRoutes from './src/routes/userRoutes.js';
+import queueRoutes from './src/routes/queueRoutes.js';
+import adminRoutes from './src/routes/adminRoutes.js';
 
 // Import centralized error handlers
-import { notFound, errorHandler } from './middleware/errorMiddleware.js';
+import { notFound, errorHandler } from './src/middleware/errorMiddleware.js';
 
 // Load environment variables from .env file
 dotenv.config();
