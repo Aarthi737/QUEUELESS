@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "build": "npm --prefix client run build",
     "client": "npm --prefix client run dev",
     "client:build": "npm --prefix client run build",
     "server": "npm --prefix server start",
