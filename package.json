@@ -7,7 +7,11 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "server": "node server/server.js",
+    "server:test": "node server/test_api.js",
+    "server:e2e": "node server/e2e_simulation.js",
+    "seed": "node server/config/seed.js"
   },
   "dependencies": {
     "lucide-react": "^1.49.0",

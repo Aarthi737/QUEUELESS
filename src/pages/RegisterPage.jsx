@@ -6,25 +6,27 @@ import { Layers, ArrowRight } from 'lucide-react';
 
 export const RegisterPage = () => {
   const navigate = useNavigate();
-  const { loginAs, addToast, updateProfile } = useQueue();
+  const { register, addToast } = useQueue();
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleRegister = (e) => {
+  const handleRegister = async (e) => {
     e.preventDefault();
-    loginAs('customer');
-    if (name || email || phone) {
-      updateProfile({
-        name: name || 'Aarthi Sharma',
-        email: email || 'aarthi.sharma@example.com',
-        phone: phone || '+91 98765 43210',
-      });
+    setLoading(true);
+    const res = await register({
+      name,
+      email,
+      phone,
+      password,
+    });
+    setLoading(false);
+    if (res && res.success) {
+      navigate('/dashboard');
     }
-    addToast('Account created successfully! Welcome to QueueLess.', 'success');
-    navigate('/dashboard');
   };
 
   return (
@@ -103,7 +105,7 @@ export const RegisterPage = () => {
             />
           </div>
 
-          <Button type="submit" variant="primary" fullWidth style={{ marginTop: '0.5rem' }}>
+          <Button type="submit" variant="primary" fullWidth loading={loading} style={{ marginTop: '0.5rem' }}>
             Register & Continue
           </Button>
         </form>

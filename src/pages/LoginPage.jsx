@@ -6,19 +6,28 @@ import { Layers, Mail, Lock, User, Briefcase, Shield, ArrowRight } from 'lucide-
 
 export const LoginPage = () => {
   const navigate = useNavigate();
-  const { loginAs, addToast } = useQueue();
+  const { login, loginAs, addToast } = useQueue();
 
   const [email, setEmail] = useState('aarthi.sharma@example.com');
   const [password, setPassword] = useState('password123');
+  const [loading, setLoading] = useState(false);
 
-  const handleFormSubmit = (e) => {
+  const handleFormSubmit = async (e) => {
     e.preventDefault();
-    loginAs('customer');
-    navigate('/dashboard');
+    setLoading(true);
+    const res = await login(email, password);
+    setLoading(false);
+    if (res && res.success) {
+      if (res.user?.role === 'staff') navigate('/staff');
+      else if (res.user?.role === 'admin') navigate('/admin');
+      else navigate('/dashboard');
+    }
   };
 
-  const handleQuickLogin = (role) => {
-    loginAs(role);
+  const handleQuickLogin = async (role) => {
+    setLoading(true);
+    const user = await loginAs(role);
+    setLoading(false);
     if (role === 'staff') navigate('/staff');
     else if (role === 'admin') navigate('/admin');
     else navigate('/dashboard');
@@ -125,7 +134,7 @@ export const LoginPage = () => {
             />
           </div>
 
-          <Button type="submit" variant="primary" fullWidth style={{ marginTop: '0.5rem' }}>
+          <Button type="submit" variant="primary" fullWidth loading={loading} style={{ marginTop: '0.5rem' }}>
             Sign In
           </Button>
         </form>

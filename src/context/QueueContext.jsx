@@ -1,54 +1,21 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { authAPI, queuesAPI, adminAPI } from '../services/api';
 import { initialServices } from '../data/services';
-import { initialUserQueue, initialQueueHistory, generateUpcomingTokens } from '../data/queues';
+import { initialUserQueue, initialQueueHistory } from '../data/queues';
 import { mockUsers } from '../data/users';
 
 const QueueContext = createContext();
 
 export const QueueProvider = ({ children }) => {
-  // Load initial data from localStorage if available, or fall back to defaults
-  const [services, setServices] = useState(() => {
-    const saved = localStorage.getItem('queueless_services');
-    return saved ? JSON.parse(saved) : initialServices;
-  });
-
-  const [userQueue, setUserQueue] = useState(() => {
-    const saved = localStorage.getItem('queueless_user_queue');
-    if (saved === 'null') return null;
-    return saved ? JSON.parse(saved) : initialUserQueue;
-  });
-
-  const [queueHistory, setQueueHistory] = useState(() => {
-    const saved = localStorage.getItem('queueless_history');
-    return saved ? JSON.parse(saved) : initialQueueHistory;
-  });
-
-  const [currentUser, setCurrentUser] = useState(() => {
-    const saved = localStorage.getItem('queueless_user');
-    return saved ? JSON.parse(saved) : mockUsers[0];
-  });
-
+  const [services, setServices] = useState(initialServices);
+  const [userQueue, setUserQueue] = useState(initialUserQueue);
+  const [queueHistory, setQueueHistory] = useState(initialQueueHistory);
+  const [currentUser, setCurrentUser] = useState(mockUsers[0]);
+  const [isLoading, setIsLoading] = useState(true);
   const [toasts, setToasts] = useState([]);
 
-  // Sync to localStorage
-  useEffect(() => {
-    localStorage.setItem('queueless_services', JSON.stringify(services));
-  }, [services]);
-
-  useEffect(() => {
-    localStorage.setItem('queueless_user_queue', JSON.stringify(userQueue));
-  }, [userQueue]);
-
-  useEffect(() => {
-    localStorage.setItem('queueless_history', JSON.stringify(queueHistory));
-  }, [queueHistory]);
-
-  useEffect(() => {
-    localStorage.setItem('queueless_user', JSON.stringify(currentUser));
-  }, [currentUser]);
-
   // Toast notifications helper
-  const addToast = (message, type = 'info', duration = 3500) => {
+  const addToast = useCallback((message, type = 'info', duration = 3500) => {
     const id = Date.now() + Math.random().toString(36).substring(2, 7);
     setToasts((prev) => [...prev, { id, message, type }]);
 
@@ -57,279 +24,295 @@ export const QueueProvider = ({ children }) => {
         removeToast(id);
       }, duration);
     }
-  };
+  }, []);
 
-  const removeToast = (id) => {
+  const removeToast = useCallback((id) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
-  };
+  }, []);
 
-  // Join a queue for a specific service
-  const joinQueue = (serviceId, customNotes = '') => {
-    const service = services.find((s) => s.id === serviceId);
-    if (!service) {
-      addToast('Service not found', 'error');
-      return null;
-    }
-
-    if (service.status === 'Paused') {
-      addToast('This queue is temporarily paused. Please check back shortly.', 'warning');
-      return null;
-    }
-
-    // Generate token number
-    const nextNumber = service.currentNumber + service.peopleWaiting + 1;
-    const tokenNumber = `${service.codePrefix}${nextNumber < 10 ? '0' + nextNumber : nextNumber}`;
-    const peopleAhead = service.peopleWaiting;
-    const estimatedWait = peopleAhead * service.avgWaitPerPerson;
-
-    const newQueue = {
-      id: `token-${Date.now()}`,
-      tokenNumber,
-      tokenIndex: nextNumber,
-      serviceId: service.id,
-      serviceName: service.name,
-      department: service.department,
-      category: service.category,
-      location: service.location,
-      counterNumber: service.counterNumber,
-      status: 'Waiting',
-      issuedAt: 'Just now',
-      peopleAhead,
-      estimatedWait,
-      currentServing: service.currentServing,
-      notes: customNotes || `Online token for ${service.department}`,
-    };
-
-    // Update service waiting count
-    setServices((prev) =>
-      prev.map((s) =>
-        s.id === serviceId
-          ? {
-              ...s,
-              peopleWaiting: s.peopleWaiting + 1,
-              estimatedWait: (s.peopleWaiting + 1) * s.avgWaitPerPerson,
-            }
-          : s
-      )
-    );
-
-    setUserQueue(newQueue);
-    addToast(`Successfully joined the queue! Token: ${tokenNumber}`, 'success');
-    return newQueue;
-  };
-
-  // Leave active queue
-  const leaveQueue = () => {
-    if (!userQueue) return;
-
-    // Add to history as Cancelled
-    const historyItem = {
-      id: `hist-${Date.now()}`,
-      tokenNumber: userQueue.tokenNumber,
-      serviceName: userQueue.serviceName,
-      department: userQueue.department,
-      category: userQueue.category,
-      status: 'Cancelled',
-      date: 'Today, Just now',
-      counter: userQueue.counterNumber,
-      waitTime: 'Cancelled by user',
-    };
-
-    setQueueHistory((prev) => [historyItem, ...prev]);
-
-    // Decrement people waiting for the service
-    setServices((prev) =>
-      prev.map((s) =>
-        s.id === userQueue.serviceId
-          ? {
-              ...s,
-              peopleWaiting: Math.max(0, s.peopleWaiting - 1),
-              estimatedWait: Math.max(0, s.peopleWaiting - 1) * s.avgWaitPerPerson,
-            }
-          : s
-      )
-    );
-
-    setUserQueue(null);
-    addToast('You have left the queue.', 'info');
-  };
-
-  // Staff action: Call next token
-  const callNext = (serviceId) => {
-    const service = services.find((s) => s.id === serviceId);
-    if (!service) return;
-
-    const nextNum = service.currentNumber + 1;
-    const nextTokenStr = `${service.codePrefix}${nextNum < 10 ? '0' + nextNum : nextNum}`;
-    const newWaiting = Math.max(0, service.peopleWaiting - 1);
-
-    // Update service
-    setServices((prev) =>
-      prev.map((s) =>
-        s.id === serviceId
-          ? {
-              ...s,
-              currentNumber: nextNum,
-              currentServing: nextTokenStr,
-              peopleWaiting: newWaiting,
-              estimatedWait: newWaiting * s.avgWaitPerPerson,
-            }
-          : s
-      )
-    );
-
-    // Update user queue if user belongs to this service
-    if (userQueue && userQueue.serviceId === serviceId) {
-      if (userQueue.tokenIndex === nextNum) {
-        // User's turn now!
-        setUserQueue((prev) => ({
-          ...prev,
-          currentServing: nextTokenStr,
-          status: 'Now Serving',
-          peopleAhead: 0,
-          estimatedWait: 0,
-        }));
-        addToast(`🎉 Ding! Your turn has arrived! Please proceed to ${service.counterNumber}.`, 'success', 8000);
-      } else if (userQueue.tokenIndex > nextNum) {
-        // Still waiting, position advanced
-        const newAhead = Math.max(0, userQueue.tokenIndex - nextNum);
-        setUserQueue((prev) => ({
-          ...prev,
-          currentServing: nextTokenStr,
-          peopleAhead: newAhead,
-          estimatedWait: newAhead * service.avgWaitPerPerson,
-        }));
-        addToast(`Queue advanced. Now serving: ${nextTokenStr}.`, 'info');
-      } else if (userQueue.tokenIndex < nextNum && userQueue.status !== 'Completed') {
-        // Already served/passed
-        setUserQueue((prev) => ({
-          ...prev,
-          currentServing: nextTokenStr,
-          status: 'Completed',
-          peopleAhead: 0,
-          estimatedWait: 0,
-        }));
-
-        // Archive to history
-        setQueueHistory((prev) => [
-          {
-            id: `hist-${Date.now()}`,
-            tokenNumber: userQueue.tokenNumber,
-            serviceName: userQueue.serviceName,
-            department: userQueue.department,
-            category: userQueue.category,
-            status: 'Completed',
-            date: 'Today, Just now',
-            counter: userQueue.counterNumber,
-            waitTime: `${service.avgWaitPerPerson * 6} min`,
-          },
-          ...prev,
-        ]);
-        addToast(`Token ${userQueue.tokenNumber} marked as completed.`, 'success');
+  // Fetch all queues from backend
+  const fetchQueues = useCallback(async () => {
+    try {
+      const res = await queuesAPI.getAll();
+      if (res.success && Array.isArray(res.data)) {
+        setServices(res.data);
       }
-    } else {
-      addToast(`Now serving: ${nextTokenStr}`, 'info');
+    } catch (err) {
+      console.warn('Backend queues fetch failed, using local fallback:', err.message);
     }
-  };
+  }, []);
 
-  // Staff action: Complete current token
-  const completeCurrent = (serviceId) => {
-    const service = services.find((s) => s.id === serviceId);
-    if (!service) return;
-
-    if (userQueue && userQueue.serviceId === serviceId && userQueue.currentServing === userQueue.tokenNumber) {
-      // User was being served, mark complete and archive
-      setUserQueue((prev) => ({
-        ...prev,
-        status: 'Completed',
-      }));
-
-      setQueueHistory((prev) => [
-        {
-          id: `hist-${Date.now()}`,
-          tokenNumber: userQueue.tokenNumber,
-          serviceName: userQueue.serviceName,
-          department: userQueue.department,
-          category: userQueue.category,
-          status: 'Completed',
-          date: 'Today, Just now',
-          counter: userQueue.counterNumber,
-          waitTime: 'Completed',
-        },
-        ...prev,
-      ]);
+  // Fetch active queue for current user
+  const fetchMyActiveQueue = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('queueless_token');
+      if (!token) return;
+      const res = await queuesAPI.getMyActive();
+      if (res.success) {
+        setUserQueue(res.data);
+      }
+    } catch (err) {
+      console.warn('Backend active queue fetch failed:', err.message);
     }
+  }, []);
 
-    addToast(`Token ${service.currentServing} completed.`, 'success');
-    // Call next
-    callNext(serviceId);
-  };
+  // Fetch queue history for current user
+  const fetchMyHistory = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('queueless_token');
+      if (!token) return;
+      const res = await queuesAPI.getMyHistory();
+      if (res.success && Array.isArray(res.data)) {
+        setQueueHistory(res.data);
+      }
+    } catch (err) {
+      console.warn('Backend history fetch failed:', err.message);
+    }
+  }, []);
 
-  // Staff action: Skip current token
-  const skipCurrent = (serviceId) => {
-    const service = services.find((s) => s.id === serviceId);
-    if (!service) return;
+  // Initialize session on mount
+  useEffect(() => {
+    const initApp = async () => {
+      setIsLoading(true);
+      await fetchQueues();
 
-    addToast(`Token ${service.currentServing} was skipped.`, 'warning');
-    callNext(serviceId);
-  };
-
-  // Staff action: Toggle pause/resume queue
-  const togglePauseQueue = (serviceId) => {
-    setServices((prev) =>
-      prev.map((s) => {
-        if (s.id === serviceId) {
-          const nextStatus = s.status === 'Active' ? 'Paused' : 'Active';
-          addToast(
-            `${s.name} queue is now ${nextStatus === 'Paused' ? 'paused' : 'resumed and active'}.`,
-            nextStatus === 'Paused' ? 'warning' : 'success'
-          );
-          return { ...s, status: nextStatus };
+      const existingToken = localStorage.getItem('queueless_token');
+      if (existingToken) {
+        try {
+          const meRes = await authAPI.getMe();
+          if (meRes.success && meRes.user) {
+            setCurrentUser(meRes.user);
+            await fetchMyActiveQueue();
+            await fetchMyHistory();
+          }
+        } catch (err) {
+          console.warn('Stored token validation failed, performing demo login:', err.message);
+          localStorage.removeItem('queueless_token');
+          await loginAs('customer');
         }
-        return s;
-      })
-    );
+      } else {
+        // Auto-authenticate as default customer demo user so app is instantly ready with live token
+        await loginAs('customer');
+      }
+      setIsLoading(false);
+    };
+
+    initApp();
+  }, []);
+
+  // Real API Login
+  const login = async (email, password) => {
+    try {
+      const res = await authAPI.login(email, password);
+      if (res.success && res.token) {
+        localStorage.setItem('queueless_token', res.token);
+        setCurrentUser(res.user);
+        await fetchMyActiveQueue();
+        await fetchMyHistory();
+        await fetchQueues();
+        addToast(`Welcome back, ${res.user.name}!`, 'success');
+        return { success: true, user: res.user };
+      }
+    } catch (err) {
+      addToast(err.message || 'Login failed', 'error');
+      return { success: false, message: err.message };
+    }
   };
 
-  // User auth mock switchers
-  const switchUser = (userId) => {
+  // Real API Register
+  const register = async (userData) => {
+    try {
+      const res = await authAPI.register(userData);
+      if (res.success && res.token) {
+        localStorage.setItem('queueless_token', res.token);
+        setCurrentUser(res.user);
+        await fetchQueues();
+        addToast('Account created successfully!', 'success');
+        return { success: true, user: res.user };
+      }
+    } catch (err) {
+      addToast(err.message || 'Registration failed', 'error');
+      return { success: false, message: err.message };
+    }
+  };
+
+  // Switch demo user / role
+  const loginAs = async (role) => {
+    const roleCredentials = {
+      customer: { email: 'aarthi.sharma@example.com', password: 'password123' },
+      staff: { email: 'r.kumar@citycare.org', password: 'password123' },
+      admin: { email: 'admin@queueless.io', password: 'password123' },
+    };
+
+    const creds = roleCredentials[role] || roleCredentials.customer;
+
+    try {
+      const res = await authAPI.login(creds.email, creds.password);
+      if (res.success && res.token) {
+        localStorage.setItem('queueless_token', res.token);
+        setCurrentUser(res.user);
+        await fetchMyActiveQueue();
+        await fetchMyHistory();
+        await fetchQueues();
+        addToast(`Logged in as ${res.user.name} (${res.user.role.toUpperCase()})`, 'info');
+        return res.user;
+      }
+    } catch (err) {
+      console.warn('Demo login via API failed, using local mock user:', err.message);
+      const user = mockUsers.find((u) => u.role === role) || mockUsers[0];
+      setCurrentUser(user);
+      return user;
+    }
+  };
+
+  const switchUser = async (userId) => {
     const found = mockUsers.find((u) => u.id === userId);
     if (found) {
-      setCurrentUser(found);
-      addToast(`Switched user to ${found.name} (${found.role.toUpperCase()})`, 'info');
+      await loginAs(found.role);
     }
   };
 
-  const updateProfile = (updatedFields) => {
-    setCurrentUser((prev) => ({
-      ...prev,
-      ...updatedFields,
-    }));
-    addToast('Profile updated successfully!', 'success');
+  // Join Queue with backend API
+  const joinQueue = async (serviceId, customNotes = '') => {
+    try {
+      const res = await queuesAPI.join(serviceId, {
+        notes: customNotes,
+        customerName: currentUser?.name || 'Aarthi Sharma',
+        customerPhone: currentUser?.phone || '+91 98765 43210',
+      });
+
+      if (res.success && res.data) {
+        setUserQueue(res.data);
+        await fetchQueues();
+        addToast(`Successfully joined the queue! Token: ${res.data.tokenNumber}`, 'success');
+        return res.data;
+      }
+    } catch (err) {
+      // If duplicate token exists in DB, fetch the active one
+      if (err.status === 409) {
+        addToast(err.message, 'warning');
+        await fetchMyActiveQueue();
+        return userQueue;
+      }
+      addToast(err.message || 'Failed to join queue', 'error');
+      return null;
+    }
   };
 
+  // Leave Queue with backend API
+  const leaveQueue = async () => {
+    if (!userQueue) return;
+
+    try {
+      const res = await queuesAPI.leave(userQueue.serviceId, {
+        entryId: userQueue.id || userQueue._id,
+        tokenNumber: userQueue.tokenNumber,
+      });
+
+      if (res.success) {
+        setUserQueue(null);
+        await fetchMyHistory();
+        await fetchQueues();
+        addToast('You have left the queue.', 'info');
+      }
+    } catch (err) {
+      addToast(err.message || 'Failed to leave queue', 'error');
+    }
+  };
+
+  // Staff: Call next token
+  const callNext = async (serviceId) => {
+    try {
+      const res = await queuesAPI.callNext(serviceId);
+      if (res.success) {
+        await fetchQueues();
+        await fetchMyActiveQueue();
+        addToast(res.message || 'Called next token', 'info');
+      }
+    } catch (err) {
+      addToast(err.message || 'Failed to call next token', 'error');
+    }
+  };
+
+  // Staff: Complete current token
+  const completeCurrent = async (serviceId) => {
+    try {
+      const res = await queuesAPI.complete(serviceId);
+      if (res.success) {
+        await fetchQueues();
+        await fetchMyActiveQueue();
+        await fetchMyHistory();
+        addToast('Token marked as completed.', 'success');
+      }
+    } catch (err) {
+      addToast(err.message || 'Failed to complete token', 'error');
+    }
+  };
+
+  // Staff: Skip current token
+  const skipCurrent = async (serviceId) => {
+    try {
+      const res = await queuesAPI.skip(serviceId);
+      if (res.success) {
+        await fetchQueues();
+        await fetchMyActiveQueue();
+        addToast('Token was skipped.', 'warning');
+      }
+    } catch (err) {
+      addToast(err.message || 'Failed to skip token', 'error');
+    }
+  };
+
+  // Staff: Toggle Pause / Resume
+  const togglePauseQueue = async (serviceId) => {
+    try {
+      const res = await queuesAPI.togglePause(serviceId);
+      if (res.success) {
+        await fetchQueues();
+        addToast(res.message, res.data.status === 'Paused' ? 'warning' : 'success');
+      }
+    } catch (err) {
+      addToast(err.message || 'Failed to toggle queue status', 'error');
+    }
+  };
+
+  // Update profile with real API
+  const updateProfile = async (updatedFields) => {
+    try {
+      const res = await authAPI.updateProfile(updatedFields);
+      if (res.success && res.user) {
+        setCurrentUser(res.user);
+        addToast('Profile updated successfully!', 'success');
+      }
+    } catch (err) {
+      addToast(err.message || 'Failed to update profile', 'error');
+    }
+  };
+
+  // Logout
   const logout = () => {
+    localStorage.removeItem('queueless_token');
     setCurrentUser(null);
+    setUserQueue(null);
+    setQueueHistory([]);
     addToast('Logged out successfully.', 'info');
   };
 
-  const loginAs = (role) => {
-    const user = mockUsers.find((u) => u.role === role) || mockUsers[0];
-    setCurrentUser(user);
-    addToast(`Welcome back, ${user.name}!`, 'success');
-  };
-
-  // Reset demo back to clean initial state
-  const resetDemo = () => {
-    localStorage.removeItem('queueless_services');
-    localStorage.removeItem('queueless_user_queue');
-    localStorage.removeItem('queueless_history');
-    localStorage.removeItem('queueless_user');
-    setServices(initialServices);
-    setUserQueue(initialUserQueue);
-    setQueueHistory(initialQueueHistory);
-    setCurrentUser(mockUsers[0]);
-    addToast('Demo state reset to default mock data.', 'info');
+  // Reset Demo to fresh state in MongoDB
+  const resetDemo = async () => {
+    try {
+      const res = await adminAPI.resetDemo();
+      if (res.success) {
+        localStorage.removeItem('queueless_token');
+        await loginAs('customer');
+        await fetchQueues();
+        await fetchMyActiveQueue();
+        await fetchMyHistory();
+        addToast('Demo database reset to clean default state in MongoDB.', 'info');
+      }
+    } catch (err) {
+      addToast(err.message || 'Failed to reset demo database', 'error');
+    }
   };
 
   return (
@@ -339,20 +322,26 @@ export const QueueProvider = ({ children }) => {
         userQueue,
         queueHistory,
         currentUser,
+        isLoading,
         toasts,
         addToast,
         removeToast,
+        login,
+        register,
+        loginAs,
+        switchUser,
         joinQueue,
         leaveQueue,
         callNext,
         completeCurrent,
         skipCurrent,
         togglePauseQueue,
-        switchUser,
         updateProfile,
         logout,
-        loginAs,
         resetDemo,
+        fetchQueues,
+        fetchMyActiveQueue,
+        fetchMyHistory,
       }}
     >
       {children}

@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueue } from '../context/QueueContext';
+import { adminAPI } from '../services/api';
 import { StatCard } from '../components/StatCard';
 import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
@@ -19,12 +20,27 @@ import {
 export const AdminDashboard = () => {
   const navigate = useNavigate();
   const { services, togglePauseQueue, queueHistory } = useQueue();
+  const [overview, setOverview] = useState(null);
 
-  // Compute live overview counts
-  const totalWaiting = services.reduce((acc, s) => acc + s.peopleWaiting, 0);
-  const activeQueuesCount = services.filter((s) => s.status === 'Active').length;
-  const peopleServedCount = 124 + queueHistory.filter((h) => h.status === 'Completed').length;
-  const avgWaitTime = Math.round(
+  useEffect(() => {
+    const fetchOverview = async () => {
+      try {
+        const res = await adminAPI.getOverview();
+        if (res.success && res.data) {
+          setOverview(res.data);
+        }
+      } catch (err) {
+        // fallback to live computation from services
+      }
+    };
+    fetchOverview();
+  }, [services]);
+
+  // Compute live overview counts or use backend aggregate
+  const totalWaiting = overview?.peopleWaiting ?? services.reduce((acc, s) => acc + s.peopleWaiting, 0);
+  const activeQueuesCount = overview?.activeQueues ?? services.filter((s) => s.status === 'Active').length;
+  const peopleServedCount = overview?.peopleServed ?? (124 + queueHistory.filter((h) => h.status === 'Completed').length);
+  const avgWaitTime = overview?.averageWaitTime ?? Math.round(
     services.reduce((acc, s) => acc + s.estimatedWait, 0) / (services.length || 1)
   );
 

@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQueue } from '../context/QueueContext';
+import { queuesAPI } from '../services/api';
 import { Button } from '../components/Button';
 import { StatusBadge } from '../components/StatusBadge';
 import {
@@ -27,18 +28,52 @@ export const StaffDashboard = () => {
     userQueue,
   } = useQueue();
 
-  // Active managed service (defaults to hosp-1: CityCare Hospital)
-  const [selectedServiceId, setSelectedServiceId] = useState('hosp-1');
+  const [selectedServiceId, setSelectedServiceId] = useState('');
+  const [entriesList, setEntriesList] = useState([]);
+
+  // Auto-select first service if none selected or not found
+  useEffect(() => {
+    if (services && services.length > 0) {
+      if (!selectedServiceId || !services.find((s) => s.id === selectedServiceId)) {
+        setSelectedServiceId(services[0].id);
+      }
+    }
+  }, [services, selectedServiceId]);
 
   const currentService =
-    services.find((s) => s.id === selectedServiceId) || services[0];
+    services.find((s) => s.id === selectedServiceId) || services[0] || {};
 
   const isPaused = currentService.status === 'Paused';
 
-  // Generate the upcoming tokens list for this service
-  const upcomingTokens = generateUpcomingTokens(
-    currentService.codePrefix,
-    currentService.currentNumber,
+  // Fetch live upcoming entries from backend
+  useEffect(() => {
+    const fetchEntries = async () => {
+      if (currentService.id) {
+        try {
+          const res = await queuesAPI.getEntries(currentService.id);
+          if (res.success && Array.isArray(res.data)) {
+            setEntriesList(res.data);
+            return;
+          }
+        } catch (err) {
+          // fallback to client generator
+        }
+      }
+      setEntriesList(
+        generateUpcomingTokens(
+          currentService.codePrefix || 'A',
+          currentService.currentNumber || 0,
+          6
+        )
+      );
+    };
+
+    fetchEntries();
+  }, [currentService.id, currentService.currentNumber, currentService.currentServing]);
+
+  const upcomingTokens = entriesList.length > 0 ? entriesList : generateUpcomingTokens(
+    currentService.codePrefix || 'A',
+    currentService.currentNumber || 0,
     6
   );
 
