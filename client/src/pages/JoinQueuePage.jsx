@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQueue } from '../context/QueueContext';
 import { Button } from '../components/Button';
@@ -26,17 +26,32 @@ export const JoinQueuePage = () => {
   const [issuedQueue, setIssuedQueue] = useState(null);
   const [notes, setNotes] = useState('');
 
-  // Form fields
-  const [userName, setUserName] = useState(currentUser?.name || 'Aarthi Sharma');
-  const [userPhone, setUserPhone] = useState(currentUser?.phone || '+91 98765 43210');
+  // Form fields synced with logged-in user
+  const [userName, setUserName] = useState(currentUser?.name || '');
+  const [userPhone, setUserPhone] = useState(currentUser?.phone || '');
 
-  const handleGetToken = () => {
+  useEffect(() => {
+    if (currentUser) {
+      if (!userName) setUserName(currentUser.name || '');
+      if (!userPhone) setUserPhone(currentUser.phone || '');
+    }
+  }, [currentUser]);
+
+  const handleGetToken = async (e) => {
+    if (e) e.preventDefault();
+    if (!service) return;
     setIsSubmitting(true);
-    setTimeout(() => {
-      const created = joinQueue(service.id, notes);
-      setIssuedQueue(created);
+    try {
+      const created = await joinQueue(service.id, notes, {
+        name: userName || currentUser?.name || 'Customer',
+        phone: userPhone || currentUser?.phone || '',
+      });
+      if (created) {
+        setIssuedQueue(created);
+      }
+    } finally {
       setIsSubmitting(false);
-    }, 600);
+    }
   };
 
   // If already issued or just clicked "Get Digital Token", show the success confirmation state

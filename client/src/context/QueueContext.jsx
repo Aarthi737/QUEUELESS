@@ -8,9 +8,9 @@ const QueueContext = createContext();
 
 export const QueueProvider = ({ children }) => {
   const [services, setServices] = useState(initialServices);
-  const [userQueue, setUserQueue] = useState(initialUserQueue);
-  const [queueHistory, setQueueHistory] = useState(initialQueueHistory);
-  const [currentUser, setCurrentUser] = useState(mockUsers[0]);
+  const [userQueue, setUserQueue] = useState(null);
+  const [queueHistory, setQueueHistory] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [toasts, setToasts] = useState([]);
 
@@ -126,6 +126,8 @@ export const QueueProvider = ({ children }) => {
       if (res.success && res.token) {
         localStorage.setItem('queueless_token', res.token);
         setCurrentUser(res.user);
+        setUserQueue(null);
+        setQueueHistory([]);
         await fetchQueues();
         addToast('Account created successfully!', 'success');
         return { success: true, user: res.user };
@@ -173,12 +175,12 @@ export const QueueProvider = ({ children }) => {
   };
 
   // Join Queue with backend API
-  const joinQueue = async (serviceId, customNotes = '') => {
+  const joinQueue = async (serviceId, customNotes = '', customerInfo = {}) => {
     try {
       const res = await queuesAPI.join(serviceId, {
         notes: customNotes,
-        customerName: currentUser?.name || 'Aarthi Sharma',
-        customerPhone: currentUser?.phone || '+91 98765 43210',
+        customerName: customerInfo.name || currentUser?.name || 'Customer',
+        customerPhone: customerInfo.phone || currentUser?.phone || '',
       });
 
       if (res.success && res.data) {
